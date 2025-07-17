@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arrow Shooting Game</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #f0f4c3;
+    }
+    canvas {
+      display: block;
+      background: #dcdcdc;
+    }
+    #scoreBoard {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      font-size: 24px;
+      font-family: Arial, sans-serif;
+      color: #333;
+    }
+    #powerMeter {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      width: 200px;
+      height: 20px;
+      border: 2px solid #555;
+      background: #eee;
+    }
+    #powerFill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(to right, #ff9800, #e65100);
+    }
+  </style>
+</head>
+<body>
+  <div id="scoreBoard">Score: 0</div>
+  <div id="powerMeter"><div id="powerFill"></div></div>
+  <canvas id="gameCanvas"></canvas>
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const scoreBoard = document.getElementById("scoreBoard");
+    const powerFill = document.getElementById("powerFill");
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    let mouseX = canvas.width / 2;
+    let mouseY = canvas.height / 2;
+    let charging = false;
+    let power = 0;
+    let score = 0;
+    const maxPower = 30;
+    const gravity = 0.2;
+    const arrows = [];
+
+    const bow = {
+      x: 100,
+      y: canvas.height / 2
+    };
+
+    const target = {
+      x: canvas.width - 100,
+      y: canvas.height / 2,
+      radius: 40
+    };
+
+    const hitSound = new Audio("https://cdn.jsdelivr.net/gh/napthedev/sfx/hit.mp3");
+    const drawSound = new Audio("https://cdn.jsdelivr.net/gh/napthedev/sfx/draw.mp3");
+
+    function drawArrow(x, y, angle, length = 40) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(length, 0);
+      ctx.strokeStyle = '#3e2723';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(length, 0);
+      ctx.lineTo(length - 5, -5);
+      ctx.lineTo(length - 5, 5);
+      ctx.fillStyle = '#d84315';
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawBow(angle) {
+      ctx.save();
+      ctx.translate(bow.x, bow.y);
+      ctx.rotate(angle);
+      ctx.strokeStyle = '#5d4037';
+      ctx.lineWidth = 6;
+
+      ctx.beginPath();
+      ctx.arc(0, 0, 30, Math.PI / 2, -Math.PI / 2, true);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(0, -30);
+      ctx.lineTo(-power * 1.5, 0);
+      ctx.lineTo(0, 30);
+      ctx.strokeStyle = charging ? '#ff5722' : '#795548';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      const arrowOffset = charging ? -power * 1.5 : 0;
+      drawArrow(arrowOffset, 0, 0);
+
+      ctx.restore();
+    }
+
+    function drawTarget() {
+      const rings = ["#f44336", "#fff", "#f44336", "#fff"];
+      for (let i = rings.length; i > 0; i--) {
+        ctx.beginPath();
+        ctx.arc(target.x, target.y, target.radius * (i / rings.length), 0, Math.PI * 2);
+        ctx.fillStyle = rings[i - 1];
+        ctx.fill();
+      }
+    }
+
+    function drawTrajectoryPrediction() {
+      const angle = Math.atan2(mouseY - bow.y, mouseX - bow.x);
+      const speed = Math.min(power, maxPower);
+      let x = bow.x;
+      let y = bow.y;
+      let vx = speed * Math.cos(angle);
+      let vy = speed * Math.sin(angle);
+
+      for (let i = 0; i < 60; i++) {
+        vy += gravity;
+        x += vx;
+        y += vy;
+
+        if (i % 5 === 0) {
+          ctx.beginPath();
+          ctx.arc(x, y, 3, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(0,0,0,0.2)';
+          ctx.fill();
+        }
+      }
+    }
+
+    function updateArrows() {
+      const now = Date.now();
+      arrows.forEach((arrow, index) => {
+        if (!arrow.hit) {
+          arrow.vy += gravity;
+          arrow.x += arrow.vx;
+          arrow.y += arrow.vy;
+          arrow.angle = Math.atan2(arrow.vy, arrow.vx);
+
+          const dx = arrow.x - target.x;
+          const dy = arrow.y - target.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+
+          if (distance < target.radius) {
+            arrow.vx = 0;
+            arrow.vy = 0;
+            arrow.hit = true;
+            arrow.hitTime = now;
+            score++;
+            scoreBoard.textContent = "Score: " + score;
+            hitSound.currentTime = 0;
+            hitSound.play();
+          }
+        } else {
+          if (now - arrow.hitTime > 2000) {
+            arrows.splice(index, 1);
+          }
+        }
+      });
+    }
+
+    function drawArrows() {
+      arrows.forEach((arrow) => {
+        drawArrow(arrow.x, arrow.y, arrow.angle);
+      });
+    }
+
+    function update() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawTarget();
+      const angle = Math.atan2(mouseY - bow.y, mouseX - bow.x);
+      drawBow(angle);
+      if (charging) drawTrajectoryPrediction();
+      updateArrows();
+      drawArrows();
+
+      powerFill.style.width = `${(power / maxPower) * 100}%`;
+
+      requestAnimationFrame(update);
+    }
+
+    canvas.addEventListener("mousemove", (e) => {
+      mouseX = e.clientX;
+      mouseY = e.clientY;
+    });
+
+    canvas.addEventListener("mousedown", (e) => {
+      if (e.button === 0) {
+        charging = true;
+        power = 0;
+        drawSound.currentTime = 0;
+        drawSound.play();
+      }
+    });
+
+    canvas.addEventListener("mouseup", (e) => {
+      if (e.button === 0 && charging) {
+        charging = false;
+        const angle = Math.atan2(mouseY - bow.y, mouseX - bow.x);
+        const speed = Math.min(power, maxPower);
+        arrows.push({
+          x: bow.x,
+          y: bow.y,
+          vx: speed * Math.cos(angle),
+          vy: speed * Math.sin(angle),
+          angle: angle,
+          hit: false
+        });
+        power = 0;
+      }
+    });
+
+    function chargeLoop() {
+      if (charging && power < maxPower) {
+        power += 0.4;
+      }
+      requestAnimationFrame(chargeLoop);
+    }
+
+    update();
+    chargeLoop();
+  </script>
+</body>
+</html>
